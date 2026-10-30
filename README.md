@@ -2,6 +2,8 @@
 
 Ein schneller, moderner Python Online-Compiler und Interpreter direkt im Browser – ganz ohne Backend-Server!
 
+Online erreichbar unter ![https://mickyroth.github.io/NetPython/](https://mickyroth.github.io/NetPython/) 
+
 ![Python](https://img.shields.io/badge/Python-3.12%20(Pyodide)-3776AB?logo=python&logoColor=white)
 ![WebAssembly](https://img.shields.io/badge/WebAssembly-Wasm-654FF0?logo=webassembly&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
@@ -34,8 +36,6 @@ NetPython bringt eine vollwertige Python-Umgebung direkt in Ihren Webbrowser. Es
 ## 💻 Verwendung
 
 Einfach die Datei `index.html` in einem modernen Webbrowser (Chrome, Edge, Firefox, Brave, Safari) öffnen – keine Installation von Python oder Abhängigkeiten auf dem Rechner erforderlich!
-
-Kann auch direkt per **GitHub Pages** online bereitgestellt werden.
 
 ---
 
