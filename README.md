@@ -2,7 +2,7 @@
 
 Ein schneller, moderner Python Online-Compiler und Interpreter direkt im Browser – ganz ohne Backend-Server!
 
-Online erreichbar unter ![https://mickyroth.github.io/NetPython/](https://mickyroth.github.io/NetPython/) 
+Online erreichbar unter <https://mickyroth.github.io/NetPython/>
 
 ![Python](https://img.shields.io/badge/Python-3.12%20(Pyodide)-3776AB?logo=python&logoColor=white)
 ![WebAssembly](https://img.shields.io/badge/WebAssembly-Wasm-654FF0?logo=webassembly&logoColor=white)
