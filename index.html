@@ -566,6 +566,36 @@
       font-weight: 600;
     }
 
+    .terminal-input-container {
+      display: inline-flex;
+      align-items: center;
+      vertical-align: baseline;
+      margin: 0;
+      padding: 0;
+    }
+
+    .terminal-inline-input {
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.45);
+      border-radius: 4px;
+      color: #34d399;
+      font-family: var(--font-code);
+      font-size: 13px;
+      line-height: 1.4;
+      outline: none;
+      padding: 1px 6px;
+      min-width: 140px;
+      caret-color: #38bdf8;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
+      transition: all 0.15s ease;
+    }
+
+    .terminal-inline-input:focus {
+      background: rgba(56, 189, 248, 0.16);
+      border-color: #38bdf8;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    }
+
     .out-system {
       color: #64748b;
       border-top: 1px dashed #21293a;
@@ -635,7 +665,7 @@
           NetPython<span class="brand-dot">.</span>
         </div>
       </div>
-      <div class="brand-subtitle">Python Online Compiler &amp; Interpreter <span class="version-badge">V1</span></div>
+      <div class="brand-subtitle">Python Online Compiler &amp; Interpreter <span class="version-badge">V2</span></div>
     </div>
 
     <div class="topbar-right">
@@ -996,7 +1026,88 @@ except ValueError:
       terminal.scrollTop = terminal.scrollHeight;
     }
 
-    // Prompt Handler for Python input()
+    // ==========================================================================
+    // Interaktive Terminal-Eingabe (im rechten Ausgabefenster)
+    // ==========================================================================
+    let pendingInputResolver = null;
+
+    window.readTerminalInput = function(promptText) {
+      return new Promise((resolve, reject) => {
+        if (placeholder && placeholder.parentNode === terminal) {
+          placeholder.remove();
+        }
+
+        statusDot.className = "status-dot running";
+        statusText.textContent = "Warte auf Eingabe...";
+
+        const inputContainer = document.createElement("span");
+        inputContainer.className = "terminal-input-container";
+
+        const inputElem = document.createElement("input");
+        inputElem.type = "text";
+        inputElem.className = "terminal-inline-input";
+        inputElem.autocomplete = "off";
+        inputElem.spellcheck = false;
+
+        inputContainer.appendChild(inputElem);
+        terminal.appendChild(inputContainer);
+        terminal.scrollTop = terminal.scrollHeight;
+
+        setTimeout(() => {
+          inputElem.focus();
+        }, 15);
+
+        const onTerminalClick = () => {
+          if (document.contains(inputElem)) {
+            inputElem.focus();
+          }
+        };
+        terminal.addEventListener("click", onTerminalClick);
+
+        const finishInput = (val) => {
+          terminal.removeEventListener("click", onTerminalClick);
+          pendingInputResolver = null;
+
+          const echoSpan = document.createElement("span");
+          echoSpan.className = "out-input-echo";
+          echoSpan.textContent = val + "\n";
+
+          if (inputContainer.parentNode) {
+            inputContainer.parentNode.replaceChild(echoSpan, inputContainer);
+          } else {
+            terminal.appendChild(echoSpan);
+          }
+          terminal.scrollTop = terminal.scrollHeight;
+
+          statusText.textContent = "Wird ausgeführt...";
+          resolve(val);
+        };
+
+        pendingInputResolver = (cancel = false) => {
+          terminal.removeEventListener("click", onTerminalClick);
+          if (inputContainer.parentNode) {
+            inputContainer.remove();
+          }
+          if (cancel) {
+            reject(new Error("Eingabe abgebrochen"));
+          } else {
+            resolve("");
+          }
+        };
+
+        inputElem.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            finishInput(inputElem.value);
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            finishInput("");
+          }
+        });
+      });
+    };
+
+    // Fallback Prompt Handler
     window.promptPythonInput = function(promptText) {
       const result = window.prompt(promptText || "Python input():");
       return result;
@@ -1013,28 +1124,102 @@ except ValueError:
           indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/"
         });
 
-        // Initialize standard packages and stdout/stderr hooks
+        // Initialize standard packages, AST transformer and stdout/stderr hooks
         await pyodideInstance.runPythonAsync(`
 import sys
 import builtins
 import js
+import ast
 
-# Monkey-patch input() to trigger friendly JavaScript window.prompt
-def _web_input(prompt=""):
+# Interaktive asynchrone Eingabefunktion fürs Terminal
+async def _async_input(prompt=""):
     if prompt:
         print(prompt, end="", flush=True)
-    val = js.promptPythonInput(str(prompt))
+    val = await js.readTerminalInput(str(prompt))
     if val is None:
         raise KeyboardInterrupt("Benutzereingabe abgebrochen.")
-    print(val) # echo input in terminal
-    return val
+    return str(val)
 
-builtins.input = _web_input
+# Fallback für Aufrufe außerhalb des transformierten Kontexts
+def _sync_input_fallback(prompt=""):
+    return js.promptPythonInput(str(prompt)) or ""
+
+builtins.input = _sync_input_fallback
 
 # Pre-import core requested modules
 import math
 import random
 import statistics
+
+# AST-Transformer: Wandelt synchrone input()-Aufrufe in await _async_input() um
+def _prepare_code_for_execution(src):
+    try:
+        tree = ast.parse(src)
+    except Exception:
+        return src
+
+    has_any_input = any(
+        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "input"
+        for node in ast.walk(tree)
+    )
+    if not has_any_input:
+        return src
+
+    async_funcs = set()
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                calls_input = False
+                for child in ast.walk(node):
+                    if isinstance(child, ast.Call):
+                        if isinstance(child.func, ast.Name) and (child.func.id == "input" or child.func.id in async_funcs):
+                            calls_input = True
+                            break
+                        elif isinstance(child.func, ast.Attribute) and child.func.attr in async_funcs:
+                            calls_input = True
+                            break
+                if calls_input and node.name not in async_funcs:
+                    async_funcs.add(node.name)
+                    changed = True
+
+    class TransformInputs(ast.NodeTransformer):
+        def visit_Call(self, node):
+            self.generic_visit(node)
+            if isinstance(node.func, ast.Name):
+                if node.func.id == "input":
+                    return ast.Await(value=ast.Call(
+                        func=ast.Name(id="_async_input", ctx=ast.Load()),
+                        args=node.args,
+                        keywords=node.keywords
+                    ))
+                elif node.func.id in async_funcs:
+                    return ast.Await(value=node)
+            elif isinstance(node.func, ast.Attribute):
+                if node.func.attr in async_funcs:
+                    return ast.Await(value=node)
+            return node
+
+        def visit_FunctionDef(self, node):
+            self.generic_visit(node)
+            if node.name in async_funcs:
+                return ast.AsyncFunctionDef(
+                    name=node.name,
+                    args=node.args,
+                    body=node.body,
+                    decorator_list=node.decorator_list,
+                    returns=node.returns,
+                    type_comment=getattr(node, "type_comment", None)
+                )
+            return node
+
+    tree = TransformInputs().visit(tree)
+    ast.fix_missing_locations(tree)
+    try:
+        return ast.unparse(tree)
+    except Exception:
+        return src
 `);
 
         isPyodideReady = true;
@@ -1045,7 +1230,7 @@ import statistics
         console.error("Pyodide Ladefehler:", err);
         statusDot.className = "status-dot error";
         statusText.textContent = "Fehler beim Laden";
-        appendOutput("Fehler beim Laden von Pyodide:\\n" + err.message + "\\nBitte Internetverbindung prüfen.\\n", "stderr");
+        appendOutput("Fehler beim Laden von Pyodide:\n" + err.message + "\nBitte Internetverbindung prüfen.\n", "stderr");
       }
     }
 
@@ -1057,6 +1242,12 @@ import statistics
       if (!code.trim()) {
         showToast("Kein Code zum Ausführen vorhanden.");
         return;
+      }
+
+      // Eventuell vorherige offene Eingabe auflösen
+      if (pendingInputResolver) {
+        pendingInputResolver(true);
+        pendingInputResolver = null;
       }
 
       isExecuting = true;
@@ -1084,7 +1275,18 @@ import statistics
       });
 
       try {
-        await pyodideInstance.runPythonAsync(code);
+        let executableCode = code;
+        try {
+          const prepareFn = pyodideInstance.globals.get("_prepare_code_for_execution");
+          if (prepareFn) {
+            executableCode = prepareFn(code);
+          }
+        } catch (prepErr) {
+          console.warn("AST-Vorbereitung fehlgeschlagen, führe Originalcode aus:", prepErr);
+          executableCode = code;
+        }
+
+        await pyodideInstance.runPythonAsync(executableCode);
         const duration = ((performance.now() - startTime) / 1000).toFixed(2);
         execTime.textContent = `${duration}s`;
         appendOutput(`\n[Programm beendet in ${duration}s]`, "system");
@@ -1105,6 +1307,10 @@ import statistics
 
     // "Neu" (New File)
     function handleNewFile() {
+      if (pendingInputResolver) {
+        pendingInputResolver(true);
+        pendingInputResolver = null;
+      }
       const current = editor.getValue();
       if (current.trim() && current !== DEFAULT_CODE) {
         const confirmNew = window.confirm("Neues Dokument erstellen? Nicht gespeicherter Code wird überschrieben.");
@@ -1214,6 +1420,10 @@ import statistics
 
     // Output Action: Clear
     btnClearOutput.addEventListener("click", () => {
+      if (pendingInputResolver) {
+        pendingInputResolver(true);
+        pendingInputResolver = null;
+      }
       clearTerminal();
       execTime.style.display = "none";
       if (placeholder && placeholder.parentNode !== terminal) {
