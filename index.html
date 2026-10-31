@@ -566,34 +566,39 @@
       font-weight: 600;
     }
 
-    .terminal-input-container {
-      display: inline-flex;
-      align-items: center;
-      vertical-align: baseline;
-      margin: 0;
-      padding: 0;
+    .term-input-line {
+      display: inline;
+      white-space: pre-wrap;
     }
 
-    .terminal-inline-input {
-      background: rgba(56, 189, 248, 0.08);
-      border: 1px solid rgba(56, 189, 248, 0.45);
-      border-radius: 4px;
-      color: #34d399;
-      font-family: var(--font-code);
-      font-size: 13px;
-      line-height: 1.4;
-      outline: none;
-      padding: 1px 6px;
-      min-width: 140px;
-      caret-color: #38bdf8;
-      box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
-      transition: all 0.15s ease;
+    .term-typed {
+      color: #f1f5f9;
+      white-space: pre-wrap;
     }
 
-    .terminal-inline-input:focus {
-      background: rgba(56, 189, 248, 0.16);
-      border-color: #38bdf8;
-      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    .term-cursor {
+      display: inline-block;
+      width: 8.5px;
+      height: 1.15em;
+      background-color: #f1f5f9;
+      vertical-align: -0.15em;
+      margin-left: 1px;
+      animation: term-blink 1s step-start infinite;
+    }
+
+    @keyframes term-blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+
+    .term-hidden-input {
+      position: fixed;
+      opacity: 0;
+      pointer-events: none;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
     }
 
     .out-system {
@@ -757,7 +762,7 @@
         <!-- Output Header -->
         <div class="output-header">
           <div class="output-title-group">
-            <span class="output-title">Output</span>
+            <span class="output-title">Terminal</span>
             <span class="exec-time" id="execTime" style="display: none;">0.00s</span>
           </div>
 
@@ -1040,43 +1045,63 @@ except ValueError:
         statusDot.className = "status-dot running";
         statusText.textContent = "Warte auf Eingabe...";
 
-        const inputContainer = document.createElement("span");
-        inputContainer.className = "terminal-input-container";
+        // 1. Prompt-Text (z.B. "Höhe>") direkt im Terminal anzeigen
+        if (promptText) {
+          appendOutput(promptText, "stdout");
+        }
 
-        const inputElem = document.createElement("input");
-        inputElem.type = "text";
-        inputElem.className = "terminal-inline-input";
-        inputElem.autocomplete = "off";
-        inputElem.spellcheck = false;
+        // 2. Aktive Eingabezeile mit echtem Terminal-Blockcursor █ direkt neben dem Prompt
+        const inputLine = document.createElement("span");
+        inputLine.className = "term-input-line";
 
-        inputContainer.appendChild(inputElem);
-        terminal.appendChild(inputContainer);
+        const typedSpan = document.createElement("span");
+        typedSpan.className = "term-typed";
+
+        const cursorSpan = document.createElement("span");
+        cursorSpan.className = "term-cursor";
+
+        const hiddenInput = document.createElement("input");
+        hiddenInput.type = "text";
+        hiddenInput.className = "term-hidden-input";
+        hiddenInput.autocomplete = "off";
+        hiddenInput.spellcheck = false;
+
+        inputLine.appendChild(typedSpan);
+        inputLine.appendChild(cursorSpan);
+        inputLine.appendChild(hiddenInput);
+
+        terminal.appendChild(inputLine);
         terminal.scrollTop = terminal.scrollHeight;
 
+        // Fokus sofort auf das versteckte Eingabefeld setzen
         setTimeout(() => {
-          inputElem.focus();
-        }, 15);
+          hiddenInput.focus();
+        }, 10);
 
+        // Klick ins Terminal fokussiert die Eingabezeile erneut
         const onTerminalClick = () => {
-          if (document.contains(inputElem)) {
-            inputElem.focus();
+          if (document.contains(hiddenInput)) {
+            hiddenInput.focus();
           }
         };
         terminal.addEventListener("click", onTerminalClick);
+
+        // Bei Tastatureingabe: Text in Echtzeit direkt neben dem Prompt anzeigen
+        hiddenInput.addEventListener("input", () => {
+          typedSpan.textContent = hiddenInput.value;
+          terminal.scrollTop = terminal.scrollHeight;
+        });
 
         const finishInput = (val) => {
           terminal.removeEventListener("click", onTerminalClick);
           pendingInputResolver = null;
 
-          const echoSpan = document.createElement("span");
-          echoSpan.className = "out-input-echo";
-          echoSpan.textContent = val + "\n";
-
-          if (inputContainer.parentNode) {
-            inputContainer.parentNode.replaceChild(echoSpan, inputContainer);
-          } else {
-            terminal.appendChild(echoSpan);
+          if (inputLine.parentNode) {
+            inputLine.remove();
           }
+
+          // Eingegebenen Text als feste Ausgabe im Terminal übernehmen
+          appendOutput(val + "\n", "stdout");
           terminal.scrollTop = terminal.scrollHeight;
 
           statusText.textContent = "Wird ausgeführt...";
@@ -1085,8 +1110,8 @@ except ValueError:
 
         pendingInputResolver = (cancel = false) => {
           terminal.removeEventListener("click", onTerminalClick);
-          if (inputContainer.parentNode) {
-            inputContainer.remove();
+          if (inputLine.parentNode) {
+            inputLine.remove();
           }
           if (cancel) {
             reject(new Error("Eingabe abgebrochen"));
@@ -1095,10 +1120,10 @@ except ValueError:
           }
         };
 
-        inputElem.addEventListener("keydown", (e) => {
+        hiddenInput.addEventListener("keydown", (e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            finishInput(inputElem.value);
+            finishInput(hiddenInput.value);
           } else if (e.key === "Escape") {
             e.preventDefault();
             finishInput("");
@@ -1133,8 +1158,6 @@ import ast
 
 # Interaktive asynchrone Eingabefunktion fürs Terminal
 async def _async_input(prompt=""):
-    if prompt:
-        print(prompt, end="", flush=True)
     val = await js.readTerminalInput(str(prompt))
     if val is None:
         raise KeyboardInterrupt("Benutzereingabe abgebrochen.")
