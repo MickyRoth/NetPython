@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>NetPython - Python Online Compiler & Interpreter</title>
 
   <!-- CodeMirror CSS & Themes -->
@@ -240,6 +243,12 @@
       padding: 0 8px;
       flex-shrink: 0;
       gap: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .pane-toolbar::-webkit-scrollbar {
+      display: none;
     }
 
     .editor-tabs {
@@ -247,6 +256,7 @@
       align-items: center;
       height: 100%;
       gap: 2px;
+      flex-shrink: 0;
     }
 
     .tab-item {
@@ -275,6 +285,7 @@
       display: flex;
       align-items: center;
       gap: 6px;
+      flex-shrink: 0;
     }
 
     /* Standard Button Styling */
@@ -670,7 +681,7 @@
           NetPython<span class="brand-dot">.</span>
         </div>
       </div>
-      <div class="brand-subtitle">Python Online Compiler &amp; Interpreter <span class="version-badge">V3</span></div>
+      <div class="brand-subtitle">Python Online Compiler &amp; Interpreter <span class="version-badge">V3.1</span></div>
     </div>
 
     <div class="topbar-right">
