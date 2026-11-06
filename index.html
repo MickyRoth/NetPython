@@ -704,6 +704,12 @@
           </div>
 
           <div class="toolbar-actions">
+            <!-- Run Button (Prominent Blue) -->
+            <button class="btn btn-primary-run" id="btnRun" title="Code ausführen (Strg + Enter)">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <span>Run ▶</span>
+            </button>
+
             <!-- Neu Button -->
             <button class="btn btn-secondary" id="btnNew" title="Neues Dokument erstellen">
               <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
@@ -732,12 +738,6 @@
               <option value="statistics">Modul statistics (Mittelwert, Median, SD)</option>
               <option value="input">Interaktive Eingabe (input())</option>
             </select>
-
-            <!-- Run Button (Prominent Blue) -->
-            <button class="btn btn-primary-run" id="btnRun" title="Code ausführen (Strg + Enter)">
-              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              <span>Run ▶</span>
-            </button>
           </div>
         </div>
 
@@ -936,6 +936,7 @@ except ValueError:
     let isPyodideReady = false;
     let isExecuting = false;
     let currentFilename = "main.py";
+    let lastFileHandle = null;
     let editor = null;
 
     // DOM Elements
@@ -1391,8 +1392,66 @@ def _reset_user_globals():
       showToast("Neues Dokument erstellt.");
     }
 
-    // "Öffnen" (Open File)
-    function handleOpenFile() {
+    // ==========================================================================
+    // "Öffnen" (Nativer Datei-Öffnen-Dialog mit Verzeichnis-Gedächtnis)
+    // ==========================================================================
+    async function handleOpenFile() {
+      // 1. Nativer Dialog (File System Access API) mit geteiltem Verzeichnis-Gedächtnis
+      if (typeof window.showOpenFilePicker === "function") {
+        try {
+          const pickerOptions = {
+            id: "netpython_dir",
+            multiple: false,
+            types: [
+              {
+                description: "Python-Dateien (*.py, *.txt)",
+                accept: {
+                  "text/x-python": [".py"],
+                  "text/plain": [".py", ".txt"]
+                }
+              }
+            ]
+          };
+          if (lastFileHandle) {
+            pickerOptions.startIn = lastFileHandle;
+          }
+
+          let handles;
+          try {
+            handles = await window.showOpenFilePicker(pickerOptions);
+          } catch (pickerErr) {
+            if (pickerErr.name === "AbortError") {
+              return;
+            }
+            if (pickerOptions.startIn) {
+              delete pickerOptions.startIn;
+              handles = await window.showOpenFilePicker(pickerOptions);
+            } else {
+              throw pickerErr;
+            }
+          }
+
+          if (!handles || handles.length === 0) return;
+          const handle = handles[0];
+          lastFileHandle = handle;
+
+          const file = await handle.getFile();
+          const content = await file.text();
+
+          editor.setValue(content);
+          currentFilename = handle.name;
+          tabFilename.textContent = currentFilename;
+          showToast(`"${handle.name}" erfolgreich geladen.`);
+          return;
+        } catch (err) {
+          if (err.name === "AbortError") {
+            return;
+          }
+          console.warn("showOpenFilePicker fehlgeschlagen, nutze Fallback:", err);
+        }
+      }
+
+      // 2. Fallback für Browser ohne File System Access API
       fileInput.value = "";
       fileInput.click();
     }
@@ -1415,7 +1474,7 @@ def _reset_user_globals():
     });
 
     // ==========================================================================
-    // "Speichern" (Standard-Speicherndialog mit Dateityp .py)
+    // "Speichern" (Standard-Speicherndialog mit Dateityp .py & Verzeichnis-Gedächtnis)
     // ==========================================================================
     async function saveCodeToFile() {
       const code = editor.getValue();
@@ -1427,7 +1486,8 @@ def _reset_user_globals():
       // 1. Nativer Betriebssystem-Speichern-Dialog (File System Access API)
       if (typeof window.showSaveFilePicker === "function") {
         try {
-          const handle = await window.showSaveFilePicker({
+          const pickerOptions = {
+            id: "netpython_dir",
             suggestedName: filename,
             types: [
               {
@@ -1438,8 +1498,27 @@ def _reset_user_globals():
                 }
               }
             ]
-          });
+          };
+          if (lastFileHandle) {
+            pickerOptions.startIn = lastFileHandle;
+          }
 
+          let handle;
+          try {
+            handle = await window.showSaveFilePicker(pickerOptions);
+          } catch (pickerErr) {
+            if (pickerErr.name === "AbortError") {
+              return;
+            }
+            if (pickerOptions.startIn) {
+              delete pickerOptions.startIn;
+              handle = await window.showSaveFilePicker(pickerOptions);
+            } else {
+              throw pickerErr;
+            }
+          }
+
+          lastFileHandle = handle;
           const writable = await handle.createWritable();
           await writable.write(code);
           await writable.close();
