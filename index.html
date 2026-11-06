@@ -670,7 +670,7 @@
           NetPython<span class="brand-dot">.</span>
         </div>
       </div>
-      <div class="brand-subtitle">Python Online Compiler &amp; Interpreter <span class="version-badge">V2</span></div>
+      <div class="brand-subtitle">Python Online Compiler &amp; Interpreter <span class="version-badge">V3</span></div>
     </div>
 
     <div class="topbar-right">
@@ -1243,6 +1243,26 @@ def _prepare_code_for_execution(src):
         return ast.unparse(tree)
     except Exception:
         return src
+
+# System-Schlüssel, die beim Bereinigen der Variablen erhalten bleiben
+_INITIAL_SYSTEM_KEYS = {
+    "sys", "builtins", "js", "ast",
+    "math", "random", "statistics",
+    "_async_input", "_sync_input_fallback",
+    "_prepare_code_for_execution", "_reset_user_globals",
+    "_INITIAL_SYSTEM_KEYS"
+}
+
+def _reset_user_globals():
+    import math
+    import random
+    import statistics
+    for k in list(globals().keys()):
+        if k not in _INITIAL_SYSTEM_KEYS and not k.startswith("__"):
+            del globals()[k]
+    globals()["math"] = math
+    globals()["random"] = random
+    globals()["statistics"] = statistics
 `);
 
         isPyodideReady = true;
@@ -1281,6 +1301,16 @@ def _prepare_code_for_execution(src):
       execTime.textContent = "...";
 
       clearTerminal();
+
+      // Alle Variablen aus vorherigen Durchläufen löschen
+      try {
+        const resetFn = pyodideInstance.globals.get("_reset_user_globals");
+        if (resetFn) {
+          resetFn();
+        }
+      } catch (resetErr) {
+        console.warn("Fehler beim Zurücksetzen der Variablen:", resetErr);
+      }
 
       const startTime = performance.now();
 
@@ -1344,6 +1374,16 @@ def _prepare_code_for_execution(src):
       tabFilename.textContent = currentFilename;
       localStorage.removeItem("netpython_saved_code");
       clearTerminal();
+
+      // Alle Variablen aus vorherigen Durchläufen löschen
+      try {
+        const resetFn = pyodideInstance.globals.get("_reset_user_globals");
+        if (resetFn) {
+          resetFn();
+        }
+      } catch (resetErr) {
+        console.warn("Fehler beim Zurücksetzen der Variablen:", resetErr);
+      }
       if (placeholder && placeholder.parentNode !== terminal) {
         terminal.appendChild(placeholder);
       }
@@ -1448,6 +1488,16 @@ def _prepare_code_for_execution(src):
         pendingInputResolver = null;
       }
       clearTerminal();
+
+      // Alle Variablen aus vorherigen Durchläufen löschen
+      try {
+        const resetFn = pyodideInstance.globals.get("_reset_user_globals");
+        if (resetFn) {
+          resetFn();
+        }
+      } catch (resetErr) {
+        console.warn("Fehler beim Zurücksetzen der Variablen:", resetErr);
+      }
       execTime.style.display = "none";
       if (placeholder && placeholder.parentNode !== terminal) {
         terminal.appendChild(placeholder);
